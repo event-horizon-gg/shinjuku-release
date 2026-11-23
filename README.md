@@ -8,6 +8,16 @@ On a `v*` tag the workflow builds the app with the app's own command, zips it as
 
 ## List an app
 
+The quick way, from a clone of this repo (needs `gh`, and the 1Password CLI `op` for the key):
+
+```bash
+scripts/onboard.sh event-horizon-gg/new-app --build-command "./build.sh" --app-path build/NewApp.app
+```
+
+It opens a PR in the app's repo with `shinjuku.json` and the release workflow, sets the two Catalog secrets on the repo (the key goes from 1Password straight to GitHub), and lists what's left: filling in `shinjuku.json` and stamping the version. Add `--dry-run` to see it first, or `--key-file path.pem` without 1Password.
+
+By hand:
+
 1. Add `shinjuku.json` at the app repo's root:
 
    ```json
