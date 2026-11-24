@@ -45,6 +45,11 @@ on:
         required: true
       catalog-app-key:
         required: true
+      signing-p12:
+        description: Base64 .p12 of the "Event Horizon Releases" identity (scripts/make-signing-identity.sh). Without it, apps are ad-hoc signed.
+        required: false
+      signing-password:
+        required: false
 
 permissions:
   contents: write
@@ -100,6 +105,8 @@ jobs:
           APP_PATH: ${{ inputs.app-path }}
           METADATA_PATH: ${{ inputs.metadata-path }}
           VERSION: ${{ steps.version.outputs.version }}
+          SIGNING_P12: ${{ secrets.signing-p12 }}
+          SIGNING_PASSWORD: ${{ secrets.signing-password }}
         run: |
           set -euo pipefail
           [[ -d "$APP_PATH" && "$APP_PATH" == *.app ]] || { echo "::error::$APP_PATH is not a built .app"; exit 1; }
@@ -112,10 +119,25 @@ jobs:
           fi
           name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$METADATA_PATH")
           xattr -cr "$APP_PATH"
-          if ! codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
+          if [[ -n "$SIGNING_P12" ]]; then
+            # One fixed identity for every release, so macOS keeps Keychain approvals across updates.
+            keychain="$RUNNER_TEMP/signing.keychain-db"
+            keychain_password="$(openssl rand -hex 16)"
+            security create-keychain -p "$keychain_password" "$keychain"
+            security set-keychain-settings -lut 900 "$keychain"
+            security unlock-keychain -p "$keychain_password" "$keychain"
+            echo "$SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+            security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
+            rm -f "$RUNNER_TEMP/signing.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+            codesign --force --deep --keychain "$keychain" --sign "Event Horizon Releases" "$APP_PATH"
+            security delete-keychain "$keychain"
+            codesign -d -r- "$APP_PATH" 2>&1 | grep designated
+          elif ! codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
             echo "Not validly signed; applying an ad-hoc signature"
             codesign --force --deep --sign - "$APP_PATH"
           fi
+          codesign --verify --deep --strict "$APP_PATH"
           asset="${name}-${VERSION}-mac.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$asset"
           echo "asset=$asset" >> "$GITHUB_OUTPUT"

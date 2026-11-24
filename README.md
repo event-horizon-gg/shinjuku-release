@@ -55,6 +55,26 @@ By hand:
 
 4. Release: `git tag v2.1.0 && git push origin v2.1.0`. A tag with a suffix (`v2.1.0-beta.1`) becomes a Beta Release.
 
+## Stable signing
+
+Ad-hoc signatures change on every build, so macOS asks again for Keychain items after each update. To stop that, sign every release with one fixed identity:
+
+```bash
+scripts/make-signing-identity.sh event-horizon-gg/shinjuku
+```
+
+It creates a self-signed "Event Horizon Releases" certificate and sets `SHINJUKU_SIGNING_P12` and `SHINJUKU_SIGNING_PASSWORD` on the repo. Pass them through in the app's release workflow:
+
+```yaml
+    secrets:
+      catalog-app-id: ${{ secrets.SHINJUKU_CATALOG_APP_ID }}
+      catalog-app-key: ${{ secrets.SHINJUKU_CATALOG_APP_KEY }}
+      signing-p12: ${{ secrets.SHINJUKU_SIGNING_P12 }}
+      signing-password: ${{ secrets.SHINJUKU_SIGNING_PASSWORD }}
+```
+
+Keep the `.p12` and its password in 1Password; add the same identity to another repo with `--reuse`. It's not notarization: Gatekeeper still asks on first open.
+
 ## Newer Swift than GitHub's runners
 
 GitHub's macOS runners ship Xcode 26. If your app needs a newer Swift compiler (Mimir does), add `swift-version: "6.4.2"` under `with:` in its release workflow. The workflow installs that toolchain from swift.org before building.
