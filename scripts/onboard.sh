@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lists a Mac app in Shinjuku: opens a PR in the app's repo that adds shinjuku.json and
+# Lists a Mac (or iPhone) app in Shinjuku: opens a PR in the app's repo that adds shinjuku.json and
 # the release workflow, and sets the two Catalog secrets on the repo.
 #
 #   scripts/onboard.sh event-horizon-gg/new-app \
@@ -11,6 +11,8 @@
 # Options:
 #   --build-command CMD  Command that builds the .app (runs with $SHINJUKU_VERSION set)
 #   --app-path PATH      Where the built .app ends up, relative to the repo root
+#   --platform ios       An iPhone app: build-command must build it for the iOS Simulator
+#                        (xcodebuild ... -destination 'generic/platform=iOS Simulator')
 #   --name NAME          Display name and release file prefix (default: repo name, capitalized)
 #   --app-id ID          Catalog App's App ID (default: $SHINJUKU_CATALOG_APP_ID, else 5895717)
 #   --op-item TITLE      1Password document holding the key (default: "Shinjuku Catalog key")
@@ -27,12 +29,13 @@ die() { echo "error: $*" >&2; exit 1; }
 repo="" build_command="" app_path="" name=""
 app_id="${SHINJUKU_CATALOG_APP_ID:-5895717}"
 op_item="Shinjuku Catalog key" key_file="" skip_secrets=false dry_run=false
-signing_p12="" signing_item="Event Horizon Releases" skip_signing=false
+platform=mac signing_p12="" signing_item="Event Horizon Releases" skip_signing=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build-command) build_command="$2"; shift 2 ;;
     --app-path) app_path="$2"; shift 2 ;;
+    --platform) platform="$2"; shift 2 ;;
     --name) name="$2"; shift 2 ;;
     --app-id) app_id="$2"; shift 2 ;;
     --op-item) op_item="$2"; shift 2 ;;
@@ -41,12 +44,14 @@ while [[ $# -gt 0 ]]; do
     --skip-signing) skip_signing=true; shift ;;
     --skip-secrets) skip_secrets=true; shift ;;
     --dry-run) dry_run=true; shift ;;
-    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$repo" ]] || die "only one repo, please"; repo="$1"; shift ;;
   esac
 done
 
+[[ "$platform" == mac || "$platform" == ios ]] || die "--platform is mac or ios"
+[[ "$platform" == ios ]] && skip_signing=true  # Simulator builds are ad-hoc signed
 [[ "$repo" == */* ]] || die "give the repo as owner/name, e.g. event-horizon-gg/new-app"
 command -v gh >/dev/null || die "needs the GitHub CLI (gh)"
 gh repo view "$repo" --json name >/dev/null 2>&1 || die "can't see $repo with your gh login"
@@ -93,6 +98,8 @@ fi
 
 workflow=.github/workflows/shinjuku-release.yml
 if [[ ! -f "$workflow" ]]; then
+  platform_line=""
+  [[ "$platform" == ios ]] && platform_line=$'\n      platform: ios'
   mkdir -p .github/workflows
   cat > "$workflow" <<EOF
 name: Shinjuku release
@@ -106,7 +113,7 @@ jobs:
     uses: event-horizon-gg/shinjuku-release/.github/workflows/release.yml@main
     with:
       build-command: $build_command
-      app-path: $app_path
+      app-path: $app_path${platform_line}
     secrets:
       catalog-app-id: \${{ secrets.SHINJUKU_CATALOG_APP_ID }}
       catalog-app-key: \${{ secrets.SHINJUKU_CATALOG_APP_KEY }}

@@ -4,7 +4,8 @@
 # no app data. The Catalog itself stays in the private shinjuku-catalog repo.
 #
 # Each app builds its own .app however it likes (build-command); this workflow
-# then packages it as <name>-<version>-mac.zip, publishes the GitHub Release,
+# then packages it as <name>-<version>-mac.zip (or, for iPhone apps, a Simulator
+# build as <name>-<version>-ios-simulator.zip), publishes the GitHub Release,
 # and writes the app's entry into the Catalog. Triggered by a vX.Y.Z tag in
 # the app's repo; a tag with a suffix (v1.4.0-beta.1) becomes a Beta Release.
 name: Shinjuku release
@@ -20,6 +21,11 @@ on:
         description: Path to the built .app, relative to the repo root
         required: true
         type: string
+      platform:
+        description: "mac, or ios for an iPhone app: build-command then builds it for the iOS Simulator (Shinjuku runs it there)"
+        required: false
+        type: string
+        default: mac
       runs-on:
         description: Runner label (use self-hosted if GitHub's runners lack the SDK you need)
         required: false
@@ -112,6 +118,7 @@ jobs:
         id: package
         env:
           APP_PATH: ${{ inputs.app-path }}
+          PLATFORM: ${{ inputs.platform }}
           METADATA_PATH: ${{ inputs.metadata-path }}
           VERSION: ${{ steps.version.outputs.version }}
           SIGNING_P12: ${{ secrets.signing-p12 }}
@@ -119,7 +126,11 @@ jobs:
         run: |
           set -euo pipefail
           [[ -d "$APP_PATH" && "$APP_PATH" == *.app ]] || { echo "::error::$APP_PATH is not a built .app"; exit 1; }
-          plist="$APP_PATH/Contents/Info.plist"
+          case "$PLATFORM" in
+            mac) plist="$APP_PATH/Contents/Info.plist" ;;
+            ios) plist="$APP_PATH/Info.plist" ;;
+            *) echo "::error::platform must be mac or ios, not $PLATFORM"; exit 1 ;;
+          esac
           app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
           bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")
           if [[ "$app_version" != "$VERSION" ]]; then
@@ -128,7 +139,12 @@ jobs:
           fi
           name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$METADATA_PATH")
           xattr -cr "$APP_PATH"
-          if [[ -n "$SIGNING_P12" ]]; then
+          if [[ "$PLATFORM" == ios ]]; then
+            # The Simulator only needs an ad-hoc signature, which keeps any entitlements working.
+            platform=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$plist" 2>/dev/null || true)
+            [[ "$platform" == iPhoneSimulator ]] || { echo "::error::$APP_PATH is built for '$platform', not the iOS Simulator. Build with -destination 'generic/platform=iOS Simulator'."; exit 1; }
+            codesign --verify --deep --strict "$APP_PATH" 2>/dev/null || codesign --force --deep --sign - "$APP_PATH"
+          elif [[ -n "$SIGNING_P12" ]]; then
             # One fixed identity for every release, so macOS keeps Keychain approvals across updates.
             keychain="$RUNNER_TEMP/signing.keychain-db"
             keychain_password="$(openssl rand -hex 16)"
@@ -155,7 +171,7 @@ jobs:
             codesign --force --deep --sign - "$APP_PATH"
           fi
           codesign --verify --deep --strict "$APP_PATH"
-          asset="${name}-${VERSION}-mac.zip"
+          if [[ "$PLATFORM" == ios ]]; then asset="${name}-${VERSION}-ios-simulator.zip"; else asset="${name}-${VERSION}-mac.zip"; fi
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$asset"
           echo "asset=$asset" >> "$GITHUB_OUTPUT"
           echo "bundle_id=$bundle_id" >> "$GITHUB_OUTPUT"
@@ -205,6 +221,7 @@ jobs:
           METADATA_PATH: ${{ inputs.metadata-path }}
           BUNDLE_ID: ${{ steps.package.outputs.bundle_id }}
           APP_FILE: ${{ steps.package.outputs.app_file }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           set -euo pipefail
           cd .shinjuku-catalog
@@ -220,7 +237,8 @@ jobs:
               --metadata "$GITHUB_WORKSPACE/$METADATA_PATH" \
               --repo "$GITHUB_REPOSITORY" \
               --bundle-id "$BUNDLE_ID" \
-              --app-file "$APP_FILE"
+              --app-file "$APP_FILE" \
+              --platform "$PLATFORM"
             git add -A
             if git diff --cached --quiet; then
               echo "Catalog already up to date"

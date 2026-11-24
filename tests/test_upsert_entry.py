@@ -8,10 +8,10 @@ import unittest
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "upsert_entry.py"
 
 
-def run(catalog: pathlib.Path, app: pathlib.Path, repo="event-horizon-gg/heimdall"):
+def run(catalog: pathlib.Path, app: pathlib.Path, repo="event-horizon-gg/heimdall", extra=()):
     return subprocess.run(
         [sys.executable, str(SCRIPT), "--catalog-dir", str(catalog), "--metadata", str(app / "shinjuku.json"),
-         "--repo", repo, "--bundle-id", "dev.example.heimdall", "--app-file", "Heimdall.app"],
+         "--repo", repo, "--bundle-id", "dev.example.heimdall", "--app-file", "Heimdall.app", *extra],
         capture_output=True, text=True,
     )
 
@@ -43,6 +43,15 @@ class UpsertEntryTests(unittest.TestCase):
         self.assertEqual(entry["screenshots"], ["apps/heimdall/screenshots/1.png"])
         self.assertTrue((self.catalog / entry["icon"]).is_file())
         self.assertNotIn("delisted", entry)
+
+    def test_mac_entries_have_no_platform_field(self):
+        run(self.catalog, self.app)
+        self.assertNotIn("platform", self.entries()[0])
+
+    def test_ios_entries_are_marked(self):
+        result = run(self.catalog, self.app, extra=("--platform", "ios"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.entries()[0]["platform"], "ios")
 
     def test_release_never_relists_a_delisted_app(self):
         run(self.catalog, self.app)

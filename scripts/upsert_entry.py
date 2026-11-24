@@ -67,6 +67,8 @@ def build_entry(args: argparse.Namespace, catalog_dir: pathlib.Path) -> dict:
         "pitch": pitch,
         "description": metadata.get("description", ""),
     }
+    if args.platform != "mac":
+        entry["platform"] = args.platform  # absent means a Mac app, so older Shinjukus still read the Catalog
     if accent:
         entry["accentColor"] = accent
     if metadata.get("icon"):
@@ -89,6 +91,7 @@ def main() -> None:
     parser.add_argument("--repo", required=True, help="owner/name of the app's repository")
     parser.add_argument("--bundle-id", required=True)
     parser.add_argument("--app-file", required=True, help="e.g. Heimdall.app")
+    parser.add_argument("--platform", choices=["mac", "ios"], default="mac")
     args = parser.parse_args()
 
     catalog_dir = pathlib.Path(args.catalog_dir)

@@ -75,6 +75,22 @@ It creates a self-signed "Event Horizon Releases" certificate and sets `SHINJUKU
 
 Keep the `.p12` and its password in 1Password; add the same identity to another repo with `--reuse`. It's not notarization: Gatekeeper still asks on first open.
 
+## iPhone apps
+
+Shinjuku doesn't install iPhone apps; it runs them in the iOS Simulator so you can try a release without a device. Pass `platform: ios` and build for the Simulator:
+
+```yaml
+    with:
+      platform: ios
+      build-command: >-
+        xcodebuild -project Spotter.xcodeproj -scheme Spotter -configuration Release
+        -destination 'generic/platform=iOS Simulator' -derivedDataPath build
+        CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- MARKETING_VERSION=$SHINJUKU_VERSION build
+      app-path: build/Build/Products/Release-iphonesimulator/Spotter.app
+```
+
+The release then carries `<name>-<version>-ios-simulator.zip`, and the Catalog entry gets `"platform": "ios"`. No signing secrets are needed. `onboard.sh --platform ios` writes this for you.
+
 ## Newer Swift than GitHub's runners
 
 GitHub's macOS runners ship Xcode 26. If your app needs a newer Swift compiler (Mimir does), add `swift-version: "6.4.2"` under `with:` in its release workflow. The workflow installs that toolchain from swift.org before building.
