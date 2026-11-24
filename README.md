@@ -55,6 +55,10 @@ By hand:
 
 4. Release: `git tag v2.1.0 && git push origin v2.1.0`. A tag with a suffix (`v2.1.0-beta.1`) becomes a Beta Release.
 
+## Newer Swift than GitHub's runners
+
+GitHub's macOS runners ship Xcode 26. If your app needs a newer Swift compiler (Mimir does), add `swift-version: "6.4.2"` under `with:` in its release workflow. The workflow installs that toolchain from swift.org before building.
+
 ## Entry format
 
 | Field | Meaning |

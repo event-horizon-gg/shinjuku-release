@@ -30,6 +30,11 @@ on:
         required: false
         type: string
         default: ""
+      swift-version:
+        description: Install this swift.org toolchain and build with it (e.g. 6.4.2), when the runner's Xcode is too old
+        required: false
+        type: string
+        default: ""
       metadata-path:
         description: Path to the app's shinjuku.json
         required: false
@@ -68,6 +73,20 @@ jobs:
         if: inputs.node-version != ''
         with:
           node-version: ${{ inputs.node-version }}
+
+      - name: Install Swift ${{ inputs.swift-version }}
+        if: inputs.swift-version != ''
+        env:
+          SWIFT_VERSION: ${{ inputs.swift-version }}
+        run: |
+          set -euo pipefail
+          [[ "$SWIFT_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::swift-version must look like 6.4.2"; exit 1; }
+          curl -fsSL -o "$RUNNER_TEMP/swift.pkg" \
+            "https://download.swift.org/swift-${SWIFT_VERSION}-release/xcode/swift-${SWIFT_VERSION}-RELEASE/swift-${SWIFT_VERSION}-RELEASE-osx.pkg"
+          sudo installer -pkg "$RUNNER_TEMP/swift.pkg" -target /
+          id=$(plutil -extract CFBundleIdentifier raw "/Library/Developer/Toolchains/swift-${SWIFT_VERSION}-RELEASE.xctoolchain/Info.plist")
+          echo "TOOLCHAINS=$id" >> "$GITHUB_ENV"
+          TOOLCHAINS="$id" swift --version
 
       - name: Build
         env:
