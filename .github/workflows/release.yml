@@ -59,6 +59,15 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release notes need the previous tag
+
+      # Scripts that live next to this workflow (notes, Catalog entry). Callers use @main.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/shinjuku-release
+          ref: main
+          path: .shinjuku-release
 
       - name: Read version from tag
         id: version
@@ -159,10 +168,19 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           set -euo pipefail
+          # A real changelog: CHANGELOG.md's section, else the commits since the last tag.
+          # Never GitHub's generated notes, which are often just a compare link.
+          bash .shinjuku-release/scripts/release-notes.sh "$GITHUB_REF_NAME" . > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+            # Releases made by an app's own job (Astral) keep their notes only if they list changes.
+            body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
+            if ! grep -qE '^[[:space:]]*[-*] ' <<<"$body"; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+            fi
           else
-            flags=(--generate-notes --verify-tag)
+            flags=(--notes-file "$RUNNER_TEMP/notes.md" --verify-tag)
             [[ "$PRERELEASE" == true ]] && flags+=(--prerelease)
             gh release create "$GITHUB_REF_NAME" "$ASSET" "${flags[@]}"
           fi
@@ -181,14 +199,6 @@ jobs:
           repository: ${{ github.repository_owner }}/shinjuku-catalog
           token: ${{ steps.catalog-token.outputs.token }}
           path: .shinjuku-catalog
-
-      # The entry writer lives next to this workflow, in the public
-      # shinjuku-release repo. Callers use @main, so fetch main too.
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/shinjuku-release
-          ref: main
-          path: .shinjuku-release
 
       - name: Write Catalog entry
         env:
