@@ -130,7 +130,15 @@ jobs:
             security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
             rm -f "$RUNNER_TEMP/signing.p12"
             security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
-            codesign --force --deep --keychain "$keychain" --sign "Event Horizon Releases" "$APP_PATH"
+            # codesign only looks in keychains on the search list; sign by fingerprint, since a
+            # self-signed identity counts as "not trusted" and isn't matched by name everywhere.
+            original_keychains=$(security list-keychains -d user | tr -d '"')
+            security list-keychains -d user -s "$keychain" $original_keychains
+            security find-identity "$keychain"
+            identity=$(security find-certificate -c "Event Horizon Releases" -Z "$keychain" | awk '/SHA-1/ {print $3}')
+            [[ -n "$identity" ]] || { echo "::error::The signing .p12 has no 'Event Horizon Releases' certificate"; exit 1; }
+            codesign --force --deep --keychain "$keychain" --sign "$identity" "$APP_PATH"
+            security list-keychains -d user -s $original_keychains
             security delete-keychain "$keychain"
             codesign -d -r- "$APP_PATH" 2>&1 | grep designated
           elif ! codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
