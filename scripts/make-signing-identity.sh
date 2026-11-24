@@ -47,7 +47,7 @@ EOF
   # (macOS's built-in openssl) writes that format already and has no such flag.
   legacy=()
   openssl pkcs12 -help 2>&1 | grep -q -- '-legacy' && legacy=(-legacy)
-  openssl pkcs12 -export "${legacy[@]}" -inkey "$work/key.pem" -in "$work/cert.pem" -name "$name" \
+  openssl pkcs12 -export ${legacy[@]+"${legacy[@]}"} -inkey "$work/key.pem" -in "$work/cert.pem" -name "$name" \
     -out "$p12" -passout "pass:$password"
   chmod 600 "$p12"
 fi
