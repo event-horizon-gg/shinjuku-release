@@ -15,6 +15,9 @@
 #   --app-id ID          Catalog App's App ID (default: $SHINJUKU_CATALOG_APP_ID, else 5895717)
 #   --op-item TITLE      1Password document holding the key (default: "Shinjuku Catalog key")
 #   --key-file PATH      Read the key from this file instead of 1Password
+#   --signing-p12 PATH   The Event Horizon Releases identity (.p12); asks for its password.
+#                        Default: 1Password document "Event Horizon Releases" and that item's password.
+#   --skip-signing       Leave releases ad-hoc signed (macOS re-asks for Keychain access each update)
 #   --skip-secrets       Don't touch the repo's secrets
 #   --dry-run            Prepare the branch locally and show it; push and set nothing
 set -euo pipefail
@@ -24,6 +27,7 @@ die() { echo "error: $*" >&2; exit 1; }
 repo="" build_command="" app_path="" name=""
 app_id="${SHINJUKU_CATALOG_APP_ID:-5895717}"
 op_item="Shinjuku Catalog key" key_file="" skip_secrets=false dry_run=false
+signing_p12="" signing_item="Event Horizon Releases" skip_signing=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +37,8 @@ while [[ $# -gt 0 ]]; do
     --app-id) app_id="$2"; shift 2 ;;
     --op-item) op_item="$2"; shift 2 ;;
     --key-file) key_file="$2"; shift 2 ;;
+    --signing-p12) signing_p12="$2"; shift 2 ;;
+    --skip-signing) skip_signing=true; shift ;;
     --skip-secrets) skip_secrets=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -104,6 +110,8 @@ jobs:
     secrets:
       catalog-app-id: \${{ secrets.SHINJUKU_CATALOG_APP_ID }}
       catalog-app-key: \${{ secrets.SHINJUKU_CATALOG_APP_KEY }}
+      signing-p12: \${{ secrets.SHINJUKU_SIGNING_P12 }}
+      signing-password: \${{ secrets.SHINJUKU_SIGNING_PASSWORD }}
 EOF
   added+=("$workflow")
 fi
@@ -142,6 +150,22 @@ else
     gh secret set SHINJUKU_CATALOG_APP_KEY -R "$repo" < "$key_file"
   else
     op document get "$op_item" | gh secret set SHINJUKU_CATALOG_APP_KEY -R "$repo"
+  fi
+  # Stable signing identity, so macOS keeps Keychain approvals across updates.
+  if $skip_signing; then
+    echo "Skipped signing: releases will be ad-hoc signed."
+  elif [[ -n "$signing_p12" ]]; then
+    [[ -r "$signing_p12" ]] || die "can't read $signing_p12"
+    read -r -s -p "Password for $signing_p12: " signing_password; echo
+    base64 -i "$signing_p12" | gh secret set SHINJUKU_SIGNING_P12 -R "$repo"
+    gh secret set SHINJUKU_SIGNING_PASSWORD -R "$repo" --body "$signing_password"
+  elif command -v op >/dev/null && op document get "$signing_item" >/dev/null 2>&1; then
+    op document get "$signing_item" | base64 | gh secret set SHINJUKU_SIGNING_P12 -R "$repo"
+    op item get "$signing_item" --fields password --reveal | gh secret set SHINJUKU_SIGNING_PASSWORD -R "$repo"
+  else
+    echo "warning: no signing identity found (pass --signing-p12, or keep a 1Password document named"
+    echo "         '$signing_item' with a password field). Releases will be ad-hoc signed until"
+    echo "         SHINJUKU_SIGNING_P12 and SHINJUKU_SIGNING_PASSWORD are set on $repo."
   fi
 fi
 

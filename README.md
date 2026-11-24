@@ -14,7 +14,7 @@ The quick way, from a clone of this repo (needs `gh`, and the 1Password CLI `op`
 scripts/onboard.sh event-horizon-gg/new-app --build-command "./build.sh" --app-path build/NewApp.app
 ```
 
-It opens a PR in the app's repo with `shinjuku.json` and the release workflow, sets the two Catalog secrets on the repo (the key goes from 1Password straight to GitHub), and lists what's left: filling in `shinjuku.json` and stamping the version. Add `--dry-run` to see it first, or `--key-file path.pem` without 1Password.
+It opens a PR in the app's repo with `shinjuku.json` and the release workflow, sets the Catalog and signing secrets on the repo (straight from 1Password to GitHub), and lists what's left: filling in `shinjuku.json` and stamping the version. Add `--dry-run` to see it first, or `--key-file path.pem` without 1Password.
 
 By hand:
 
