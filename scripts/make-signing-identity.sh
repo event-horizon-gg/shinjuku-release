@@ -43,8 +43,11 @@ extendedKeyUsage = critical,codeSigning
 EOF
   openssl req -x509 -newkey rsa:3072 -nodes -days 3650 -config "$work/cert.cnf" \
     -keyout "$work/key.pem" -out "$work/cert.pem" 2>/dev/null
-  # -legacy keeps the .p12 readable by macOS's security tool.
-  openssl pkcs12 -export -legacy -inkey "$work/key.pem" -in "$work/cert.pem" -name "$name" \
+  # OpenSSL 3 needs -legacy for a .p12 macOS's security tool can read; LibreSSL
+  # (macOS's built-in openssl) writes that format already and has no such flag.
+  legacy=()
+  openssl pkcs12 -help 2>&1 | grep -q -- '-legacy' && legacy=(-legacy)
+  openssl pkcs12 -export "${legacy[@]}" -inkey "$work/key.pem" -in "$work/cert.pem" -name "$name" \
     -out "$p12" -passout "pass:$password"
   chmod 600 "$p12"
 fi
